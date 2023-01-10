@@ -62,13 +62,11 @@ kable(data_source_bike_facilities [1:2,], "html") %>%
 
 ### **1.2 Dataset used for the bicyle facilities**
 
-As explained before, the dataset from Paris city is huge so only the data needed has been taking into account for the analysis. Indeed as the dataset used for the analysis has been ulpoad on a SQL db on Azure,the uploading of a so great amount of data requires too much process capacity.
+As explained before, the dataset from Paris city is huge so only the data needed has been taking into account for the analysis in order to facilitate the processing
 
 Therefore the dataset used contains 12 254 (indeed one row was NULL) records with 8 variables each (although not all records have all variables). 
 
 Information concerning the distance, the type and the arrondissement has been kept
-
-*It's normal that the distance in km are equal to 0 because a mistake has been made during the uploading on the db but (INT() has been used instead of DECIMAL()) it's not an issue because we convert the column m in km*
 
 ```{r data bike path upload on Azure db, echo=FALSE, fig.align='left', fig.height=4, fig.width=3}
 #display a part of the dataset
@@ -93,7 +91,7 @@ Paris_map_info[1:7,1:9]%>%
 
 ### **1.4 Surface per arrondissement**
 
-Data regarding the surface of the Arrondissement has been extract from the shapefile in order to process the distribution of bicyle path. Then the data has been upload on an Azure SQL db.
+Data regarding the surface of the Arrondissement has been extract from the shapefile in order to process the distribution of bicyle path.
 
 *A column Name has been added to be displayed in order to facilitate the understanding of the map for the users*
 
