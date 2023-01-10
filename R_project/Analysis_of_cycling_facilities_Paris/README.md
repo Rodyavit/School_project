@@ -3,6 +3,6 @@
 
 -In the Rmarkdown file you will find all the code used for the presentation
 
--In the Dataset folder you will find all the data source used for this project
+-In the Dataset folder you will find all the data used for this project
 
 
