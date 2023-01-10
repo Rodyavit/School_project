@@ -1,0 +1,446 @@
+
+```{r load the libraries, include=FALSE}
+#First load the different libraries needed to run the code
+library(dplyr)
+library(magrittr) # use for %<>%
+library(ggplot2)
+library(sf)
+library(stringr)
+library(leaflet)
+library(janitor)
+library(tidyr)
+library(kableExtra)
+```
+
+# **Analysis of cycling facilities in Paris by arrondissement** {.tabset .tabset-fade} 
+
+##  **1.Introduction of the data used**
+
+```{r import data from dataset folder  , include=FALSE}
+#load the data from the Dataset folder
+
+## load the data from the original source
+file_path_data_source <- file.path("Dataset","reseau_cyclable.csv")
+
+data_source_bike_facilities <- read.csv2(file=file_path_data_source)
+
+##load the data regarding the cycling facilities info
+file_path_data_source_modif <- file.path("Dataset","reseau_cyclable_modif.csv")
+
+df_reseau_cyclable <- read.csv2(file=file_path_data_source_modif)
+
+##load the data regarding the surface per arrondissement
+file_path_surface_arron <- file.path("Dataset","surface_arrondissment.csv")
+
+df_surface_arron <- read.csv2(file=file_path_surface_arron)
+ 
+
+#load the shapefile with info to display arrondissement Polygon
+Paris_map_info <- sf::st_read(dsn = 'Dataset/arrondissements_Paris_map_info',layer = 'arrondissements')
+
+#count the nb of column for a condition of merging on the following chunk:process_map_data 
+nb_column_map_info=ncol(Paris_map_info)
+```
+
+###  **1.1Main dataset about the bike facilities** 
+
+The following dataset has been choose on the following source [Réseau des itinéraires cyclables de la ville de Paris](https://opendata.paris.fr/explore/dataset/reseau-cyclable/table/?disjunctive.typologie_simple&disjunctive.bidirectionnel&disjunctive.statut&disjunctive.sens_velo&disjunctive.voie&disjunctive.arrdt&disjunctive.bois&disjunctive.position&disjunctive.circulation&disjunctive.piste&disjunctive.couloir_bus&disjunctive.type_continuite&disjunctive.reseau)
+
+It is the main source of this analysis. Indeed, this dataset contains many interesting information such as the length of the cycle tracks, their location, the date of construction, their type etc...
+
+It contains 12 255 records with 18 variables each (although not all records have all variables) 
+
+*The dataset has been downloaded the 16 th december so all the bike facilities after this date have not been taking into account*
+
+```{r open data paris bike path, echo=FALSE, fig.align='left', fig.height=4, fig.width=3}
+#display a part of the dataset
+kable(data_source_bike_facilities [1:2,], "html") %>% 
+  kable_styling("striped") %>% 
+  scroll_box(width = "100%")
+```
+
+### **1.2 Dataset used for the bicyle facilities**
+
+As explained before, the dataset from Paris city is huge so only the data needed has been taking into account for the analysis. Indeed as the dataset used for the analysis has been ulpoad on a SQL db on Azure,the uploading of a so great amount of data requires too much process capacity.
+
+Therefore the dataset used contains 12 254 (indeed one row was NULL) records with 8 variables each (although not all records have all variables). 
+
+Information concerning the distance, the type and the arrondissement has been kept
+
+*It's normal that the distance in km are equal to 0 because a mistake has been made during the uploading on the db but (INT() has been used instead of DECIMAL()) it's not an issue because we convert the column m in km*
+
+```{r data bike path upload on Azure db, echo=FALSE, fig.align='left', fig.height=4, fig.width=3}
+#display a part of the dataset
+kable(df_reseau_cyclable [1:4,], "html") %>%
+  kable_styling("striped") %>% 
+  scroll_box(width = "100%")
+```
+
+### **1.3 Arrondissement shapefile used**
+
+In order to display the data on a map, a shapefile from [data gouv](https://www.data.gouv.fr/fr/datasets/arrondissements-1/#resources) has been used.
+
+This has allowed to display data per arrondissement on a map.
+
+```{r data regarding map arrondissement, echo=FALSE, fig.align='left', fig.height=4, fig.width=3}
+#display a part of the dataset
+Paris_map_info[1:7,1:9]%>%
+  kbl() %>%
+  kableExtra::kable_styling() %>% 
+  kable_paper(full_width = F)
+```
+
+### **1.4 Surface per arrondissement**
+
+Data regarding the surface of the Arrondissement has been extract from the shapefile in order to process the distribution of bicyle path. Then the data has been upload on an Azure SQL db.
+
+*A column Name has been added to be displayed in order to facilitate the understanding of the map for the users*
+
+```{r data regarding surface uploading on db, echo=FALSE, fig.align='left', fig.height=1, fig.width=1}
+#display a part of the dataset
+df_surface_arron[1:11,1:3]%>%
+  kbl() %>%
+kableExtra::kable_styling() %>% 
+kable_paper(full_width = F)
+```
+
+## **2.Distribution of cycling infrastructure**
+
+### **2.1Length of cycling facilities by arrondissement**
+
+```{r process_nb_km_arron, include=FALSE}
+#transform the km of path in numbers
+ df_reseau_cyclable$Longueur.du.tronçon.en.km <- as.numeric(df_reseau_cyclable$Longueur.du.tronçon.en.km)
+
+
+#group the arrondissement per km of bicycle facilities
+df_nb_km_arrond <- df_reseau_cyclable %>% 
+                   dplyr::group_by(Arrondissement) %>% 
+                   dplyr::summarise(round(sum(Longueur.du.tronçon.en.km),0)) %>%
+                   filter(Arrondissement!="NULL")
+
+#transform the Arrondissement in numbers
+df_nb_km_arrond$Arrondissement <- as.numeric(df_nb_km_arrond$Arrondissement)
+
+                   
+#put an understanding name for the column
+colnames(df_nb_km_arrond)[2] <- "nb_km"
+
+#count the nb of column for a condition of merging on the following chunk: import_surface_area_dat
+nb_column_km_arrond=ncol(df_nb_km_arrond)
+```
+
+<p>&nbsp;</p>
+
+```{r graph_nb_pr_arrondissement, echo=FALSE, fig.align='center', fig.height=7, fig.width=8, warning=FALSE}
+#display a graph with the info from the dataset just created before
+graph_nb_km_arrondissement <- ggplot2::ggplot(df_nb_km_arrond, 
+                                       aes(x=Arrondissement,
+                                           y=nb_km))+
+                              ggplot2::geom_col(width = 0.5,
+                                                colour = "#7B3A96",
+                                                fill="#3f2d54",
+                                                linewidth=1.3)+
+                              ggplot2::scale_x_continuous(breaks=seq(1,20,1))+
+                              ggplot2::labs(title="How many kilometers has been developed in Paris for bicycle per arrondissement?",
+                                            subtitle="Kilometers developed for bike per arrondissement",
+                                            y="Kilometers", 
+                                            x="Arrondissement Number",
+                                            caption="Source:https://opendata.paris.fr")+
+                              ggplot2::geom_text(aes(label = nb_km),
+                                                 vjust = -1.2,
+                                                 colour = "black", 
+                                                 size = 4)+
+                              ggplot2::theme(plot.title = element_text(hjust = 0.5,
+                                                                       vjust=3,
+                                                                       size =12),
+                                             plot.subtitle = element_text(hjust = 0.5,
+                                                                          vjust=0,
+                                                                          size =9,
+                                                                          face="italic"),
+                                             legend.position="right",
+                                             legend.title= element_text(face="bold"), 
+                                             axis.title.x=element_text(face="bold",
+                                                                       margin = margin(t = 10)),
+                                             panel.background = element_blank(),
+                                             axis.title.y=element_text(face="bold",
+                                                                       margin = margin(r = 10)),
+                                             plot.caption = element_text(face = "italic"),
+                                             axis.line=element_line())
+
+graph_nb_km_arrondissement 
+```
+
+As can be seen, the distribution of cycle paths is very uneven. In fact, there are more than 100 km of cycle paths in the 12th arrondissement, while in the 2nd arrondissement there are barely 17 km. It would also seem that the larger the arrondissement, the greater the number of kilometres of cycle paths.
+
+Does this mean that the larger arrondissements are better equipped for cyclists? Absolutely not, in fact the arrondissements vary greatly in size, so it would be more appropriate to compare the length of cycle track available according to the size of the arrondissement.
+
+### **2.2How to effectively compare cycling facilities between arrondissements ?**
+
+```{r import_surface_area_data,warning=FALSE, include=FALSE}
+#change the format of the surface to be able to do calculation with this info
+df_surface_arron %<>% dplyr::mutate(surface_in_km2= as.numeric(surface_in_km2))
+
+#create a condition for the merge so we can run this chunk as many times as wanted without creating issues
+if(nb_column_km_arrond==ncol(df_nb_km_arrond)){
+  #merge the datasets to obtain the surface per arrondissement
+  df_nb_km_arrond=merge(df_nb_km_arrond,df_surface_arron,by="Arrondissement",all.x=FALSE)
+}
+
+#calculate the number of kilometres of cycling facilities per square kilometre
+df_nb_km_arrond$km_per_surface_km2=round(df_nb_km_arrond$nb_km/df_nb_km_arrond$surface_in_km2,1)
+```
+
+<p>&nbsp;</p>
+
+```{r graph_nb_jm_according_surface, echo=FALSE, fig.align='center', fig.height=7, fig.width=8, warning=FALSE}
+#display a graph with the info from the dataset just created before
+graph_nb_km_arrondissement <- ggplot2::ggplot(df_nb_km_arrond,
+                                              aes(x=Arrondissement,
+                                                  y=km_per_surface_km2))+
+                              ggplot2::geom_col(width = 0.5,
+                                                colour = "#7B3A96",
+                                                fill="#3f2d54",
+                                                linewidth=1.3)+
+                              ggplot2::scale_x_continuous(breaks=seq(1,20,1))+
+                              ggplot2::labs(title="What is the number of kilometers developed for bike by arrondissement per square kilometer?",
+                                       subtitle="kilometer developed for bike per square kilometer by arrondissement ",
+                                       y="Kilometers divide by surface in square kilometer", 
+                                       x="Arrondissement Number",
+                                       caption="Source:https://opendata.paris.fr")+
+                              ggplot2::geom_text(aes(label = km_per_surface_km2),
+                                                 vjust = -1.2,
+                                                 colour = "black", 
+                                                 size = 3)+
+                              ggplot2::theme(plot.title = element_text(hjust = 0.5,
+                                                              vjust=3,
+                                                              size =12),
+                                             plot.subtitle = element_text(hjust = 0.5,
+                                                                          vjust=0,
+                                                                          size =9,
+                                                                          face="italic"),
+                                             legend.position="right",
+                                             legend.title= element_text(face="bold"), 
+                                             axis.title.x=element_text(face="bold",
+                                                                       margin = margin(t = 10)),
+                                             panel.background = element_blank(),
+                                             axis.title.y=element_text(face="bold",
+                                                                       margin = margin(r = 10)),
+                                             plot.caption = element_text(face = "italic"),
+                                             axis.line=element_line())
+
+graph_nb_km_arrondissement 
+```
+
+It would have been interesting to compare the number of kilometers of total streets with the number of kilometers of cycle paths per arrondissement in order to know which arrondissement are the best equipped for cyclists. However, the number of kilometers of total street per arrondissement was not found. 
+
+Therefore, the unit chosen to measure the quality of the facilities for cyclists is the km of cycle track per square kilometre. As can be seen, there is a more even distribution between the arrondissements, even though the first four arrondissements have almost twice as many kilometres of cycle track per square kilometre as the other arrondissements.
+
+Otherwise, on the whole, it can be said that cycle facilities are equivalent depending on the arrondissement, except for the 12th and 16th arrondissements, which have 6.9 km and 4.4 km of cycle paths per square kilometre respectively. In order to determine an explanation for these results, the distribution of cycle tracks on a map was carried out.
+
+### **2.3How are cycling facilities distributed in Paris?**
+
+```{r process_map_data, warning=FALSE, include=FALSE}
+#create the variable to display on the map arrondissement name + the result obtained 
+df_nb_km_arrond$name_data=stringr::str_c(df_nb_km_arrond$Name,' ',df_nb_km_arrond$km_per_surface_km2)
+
+#create a condition for the merge so we can run this chunk as many times as wanted without creating issues
+if(ncol(Paris_map_info)==nb_column_map_info){
+  #merge the map info with the dataset to be able to display results on the map
+  Paris_map_info=merge(Paris_map_info, df_nb_km_arrond,by.x="c_ar",by.y="Arrondissement")
+}
+```
+
+<p>&nbsp;</p>
+
+ <div align="center">  **The localisation of facilities developed for bike per arrondissement by measuring kilometer developed for bike per square kilometer ** </div>
+
+<p>&nbsp;</p>
+
+<style>
+.html-widget {
+    margin: auto;
+}
+</style>
+
+```{r graph_Paris_map, echo=FALSE, fig.align='center', fig.height=7, fig.width=8, warning=FALSE}
+#create a gradation of purple according to km of bike path per square kilometer to display it on the map
+purple_gradation <- leaflet::colorQuantile('Purples',Paris_map_info$km_per_surface_km2, na.color = 'transparent', n = 20)
+
+#create a map which display the results thanks to the color gradation and when you click with the mouse you can get the exact result
+Paris_map <-leaflet() %>% 
+            setView(lng = 2.349014,
+                     lat = 48.854716,
+                     zoom = 12.4) %>% 
+            addProviderTiles("Stamen.Watercolor") %>%
+            addProviderTiles("Stamen.TonerHybrid") %>% 
+            addPolygons(data=Paris_map_info,
+                        stroke = TRUE,
+                        smoothFactor = 0.5,
+                        fillOpacity = 0.95,
+                        label=Paris_map_info$name_data,
+                        fillColor = ~purple_gradation(km_per_surface_km2),
+                        color = "Black",
+                        weight = 1) %>% 
+            addLegend("topright", 
+            colors = c("#f9faf8","#dad9ea","#837fb9", "#63459a", "#490d84"),
+            labels = c("less", "","", "", "more"),
+            title ="Distribution of bike facilities",
+            opacity = 1) 
+Paris_map
+```
+
+<p>&nbsp;</p>
+
+Unsurprisingly, the centre of Paris has the best cycling facilities. Indeed, this is the part of the city where most people pass through and go. Therefore, the city council had to favour this area for cycling facilities. On the other hand, it is now easier to understand why the 12th and 16th arrondissements have a low rate of km of cycle track per square kilometre. The 16th arrondissement includes the Bois de Boulogne and the 12th arrondissement the Bois de Vincennes. This increases their surface area and it is not in the parks that we will find a large number of cycle paths. The analysis for these two arrondissements is therefore a little skewed.
+
+On the other hand, it can be seen that the north/north-east has a better cycle network than the other parts of the city, without any apparent explanation. For example, the 11th and 20th arrondissements have a high concentration of cycle paths even though they are not central arrondissements.
+
+This difference can be explained by the different types of infrastructure put in place and counted as cycle routes when they do not have the same impact, e.g. shared lanes with buses are easier to put in place than real cycle paths. In part 3 this hypothesis will be studied in order to better understand these differences between the arrondissements
+
+## **3.Type of cycling infrastructure**
+
+### **3.1 What is the proportion of each type of infrastructure?**
+
+<p>&nbsp;</p>
+
+```{r type of cycle path, include=FALSE}
+#obtain the kilometer of each typologie by grouping them
+df_nb_km_type_cycle_path <- df_reseau_cyclable %>% 
+                            dplyr::group_by(Typologie) %>% 
+                            dplyr::summarise(round(sum(Longueur.du.tronçon.en.km),0))
+
+#Only select the good typologie number (1,2,4,5) as explained on Paris website in order to avoid NULL value
+df_nb_km_type_cycle_path <- subset(df_nb_km_type_cycle_path,(Typologie %in% c(1,2,4,5)))
+
+#creating understanding column names for the readers
+colnames(df_nb_km_type_cycle_path)=c("Typologie","Number_of_kilometers")
+
+#replacing numbers by understandable expression thanks to Paris website
+df_nb_km_type_cycle_path[1]=c("Bicycle path","Bicycle lane","Bus lane open to bicycles","Other cycle routes*")
+```
+
+```{r graph_type_km, echo=FALSE, fig.align='center', fig.height=7, fig.width=8, warning=FALSE}
+#display a graph with the info from the dataset just created before
+graph_nb_km_per_type_path <-ggplot2::ggplot(data = df_nb_km_type_cycle_path,
+                                            aes(x = Typologie,
+                                                y = Number_of_kilometers))+ #add infos for graphs
+                            ggplot2::geom_col(colour = "#7B3A96",
+                                              fill="#3f2d54",
+                                              linewidth=1.3) +
+                            ggplot2::geom_text(aes(label = Number_of_kilometers),
+                                               color="White",
+                                               hjust=0.5,
+                                               vjust=1.2,
+                                               size = 6)+ #change text size on the bars
+                            ggplot2::labs(title = "How many kilometers has been developed in Paris for bicycle by type of cycling infrastructure?", 
+                                          subtitle = "Number of kilometers by type of cycling infrastructure",
+                                          x = "Type of cycling infrastructure",
+                                          y = "Kilometers",
+                                          caption="Source:https://opendata.paris.fr \n *Other cycle routes: pedestrian areas, contra-cycling lanes, lanes closed to general traffic etc..")+
+                            ggplot2::theme(plot.title = element_text(hjust = 0.5,
+                                                                     vjust=3,
+                                                                     size =12),
+                                           plot.subtitle = element_text(hjust = 0.5,
+                                                                        vjust=0,size =9,
+                                                                        face="italic"),
+                                           legend.position="right",
+                                           legend.title= element_text(face="bold"), 
+                                           axis.title.x=element_text(face="bold",
+                                                                     margin = margin(t = 10)),
+                                           panel.background = element_blank(),
+                                           axis.title.y=element_text(face="bold",
+                                                                     margin = margin(r = 10)),
+                                           plot.caption = element_text(face = "italic"),
+                                           axis.line=element_line())
+                   
+graph_nb_km_per_type_path
+```
+
+As this graph shows, it is the others cycle routes that are most present. In fact, there are almost four times as many as cycle paths in terms of kilometres. In second place are bus lanes open to bicycles, which are twice as important as bicycle lanes. 
+
+This result was entirely expected as there is no real construction for contra-cycling lanes, opening a bus lane for cyclists and allowing them access to pedestrian routes. Whereas a cycle lane and path require more resources and it is not necessarily possible to implement it everywhere.
+
+### **3.2 Is the type of cycling infrastructures the cause of the differences between the districts?**
+
+<p>&nbsp;</p>
+
+```{r type_by_arrondissement, warning=FALSE, include=FALSE}
+#obtaining the percentage per type per arrondissement then put in one column to be able to realize a graph
+df_type_bike_path_arron <- janitor::tabyl(df_reseau_cyclable,
+                                          Arrondissement, 
+                                          Typologie)%>%
+                           janitor::adorn_totals("row")%>%
+                           janitor::adorn_percentages() %>% 
+                           tidyr::pivot_longer(cols=-Arrondissement,
+                                               values_to = "Typologie")%>% 
+                           dplyr::mutate_at(c('Arrondissement', 'Typologie'),as.numeric) %>% 
+                           filter(Typologie!=0) %>% 
+                           filter(Arrondissement %in% c(1:20))
+
+#replacing numbers by understandable expression thanks to Paris website
+df_type_bike_path_arron$name[df_type_bike_path_arron$name == '1'] <- 'Bicycle path'
+
+df_type_bike_path_arron$name[df_type_bike_path_arron$name == '2'] <- 'Bicycle lane'
+
+df_type_bike_path_arron$name[df_type_bike_path_arron$name == '4'] <- 'Bus lane open to bicycles'
+
+df_type_bike_path_arron$name[df_type_bike_path_arron$name == '5'] <- 'Other cycle routes*'
+```
+
+```{r graph_type_by_arrondissement,echo=FALSE, fig.align='center', fig.height=7, fig.width=8, warning=FALSE}
+#display a graph with the info from the dataset just created before
+graph_type_arrondissement <- ggplot2::ggplot(df_type_bike_path_arron,
+                                      aes(x = Arrondissement, 
+                                          y = Typologie, 
+                                          fill = name,
+                                          label = scales::percent(Typologie))) +
+                             ggplot2::geom_col(position = 'fill',
+                                               color="grey",
+                                               width = 0.8)+
+                             ggplot2::scale_fill_manual(values = c("#DDDDDD","#837fb9", "#63459a", "#3f2d54"),
+                                                        name="Type of cycling infrastructure")+
+                             ggplot2::scale_y_continuous(labels = scales::percent)+
+                             ggplot2::scale_x_continuous(breaks=seq(1,20,1))+
+                             ggplot2::geom_text(aes(label = paste0(round(Typologie,2)*100,"%")),
+                                                position = position_stack(vjust = 0.5), 
+                                                size = 2.5,
+                                                color="white")+
+                             ggplot2::labs(title="What is the proportion of the different type of cycling infrastructure developed per arrondissement ?",
+                                      subtitle="Percentage of cycling infrastructure per arrondissement ",
+                                      y="Percentage of cycling infrastructure", 
+                                      x="Arrondissement Number",
+                                      caption="Source:https://opendata.paris.fr \n *Other cycle routes: pedestrian areas, contra-cycling lanes, lanes closed to general traffic etc..") + 
+                             ggplot2::theme(plot.title = element_text(hjust = 0.5,
+                                                              vjust=3,
+                                                              size =12),
+                                      plot.subtitle = element_text(hjust = 0.5,
+                                                                   vjust=0,
+                                                                   size =9,
+                                                                   face="italic"),
+                                      legend.position="bottom",
+                                      legend.title= element_text(face="bold"), 
+                                      axis.title.x=element_text(face="bold",
+                                                                margin = margin(t = 10)),
+                                      panel.background = element_blank(),
+                                      axis.title.y=element_text(face="bold",
+                                                                margin = margin(r = 10)),
+                                      plot.caption = element_text(face = "italic"),
+                                      axis.line=element_line())
+
+graph_type_arrondissement
+```
+
+It was explained in part 2 that the 11th and 20th arrondissements have better cycling facilities than other arrondissements with a similar geographical position. When we look at this graph, we can see that their cycle track and lane provision is very low. In total, they represent barely 21% for the 20th arrondissement and 17% for the 11th arrondissement. Then, the 2nd arrondissement, which has the best score on the map, has almost 60% of other cycle routes. It therefore seems that the type of infrastructure plays an important role.
+
+However, it is not totally decisive because the 8th arrondissement, which has 10 km of infrastructure per square kilometre (which is a normal result given its location in Paris), has 50% of its infrastructure in the form of cycle paths and lanes and only 5% of other cycle roads.  Therefore, it is possible to have enough cycle infrastructure and still have a significant proportion of cycle lanes and paths.
+
+## **Conclusion**
+
+### **Conclusion**
+
+At first glance, the bicycle facilities between the boroughs are really different. In fact, if we measure the kilometer of facilities, we find big differences. However, if we relate these distances to the size of the arrondissements, we can see that the differences are not so great even if the arrondissements in the center of Paris have proportionally more bicycle facilities than the others.  
+
+For the other arrondissements, the difference in facilities can be measured according to the type of bicycle facility chosen and whether the arrondissement has a large park or not. In order to have a more relevant analysis, it would have been necessary to take into account the total length of the streets per arrondissement and not the surface area, as this distorts the analysis for the 16th and 12th arrondissements which have a large park. 
+
+It would also have been interesting to compare this analysis with the number of cyclists in order to know what pushes a cyclist to use a bicycle facility, if it is mainly its location or the type of facility? Indeed, some cyclists may prefer to use a longer but safer route that includes a bicycle lane rather than a route that includes only shared bus lanes, which are less safe. This could be useful for the Paris city hall to help them in their choice of cycling facilities implementation.
