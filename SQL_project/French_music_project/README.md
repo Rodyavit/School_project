@@ -1,7 +1,7 @@
 # French Music Project
 The aim of this project was to create a databse design with a precise topic (French Music in this case) then run queries.
 
-Here is a schema of my databse design:
+Here is a schema of my database design:
 
 
 
