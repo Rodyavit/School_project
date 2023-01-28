@@ -1,8 +1,20 @@
-# Analysis of cycling facilities in Paris by Arrondissement
--On the following link you will find the presentation with the final results of my project: [Cycling facilities presentation](https://raw.githack.com/Rodyavit/School_project/main/R_project/Analysis_of_cycling_facilities_Paris/Analysis_of_cycling_facilities_Paris.html)
+# French Music Project
+The aim of this project was to create a databse design with a precise topic (French Music in this case) then run queries.
 
--In the Rmarkdown file you will find all the code used for the presentation
+Here is a schema of my databse design:
 
--In the Dataset folder you will find all the data used for this project
 
-*The main work of this project was to group the data of the bike path in Paris by arrondissement in order to be able to display the data on a map and to know which arrondissments have the best bike facilities. However, as the size of the arrondissments and the types of cycling facilities are different, it was necessary to make an analysis in 2 distinct parts*
+
+
+
+
+
+
+
+Here is the questions I answered thanks to my queries:
+-Which album has the greatest number of tracks?
+-Which albums contain only one genre of music and which type of style?
+-Which artists have the greatest number of different styles?
+-The top 5 of years selling per Artist
+
+
