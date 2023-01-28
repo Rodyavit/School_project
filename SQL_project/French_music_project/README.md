@@ -9,7 +9,7 @@ Here is a schema of my databse design:
 
 
 
-Here is the questions I answered thanks to my queries:
+Questions I answered thanks to my queries:
 
 -Which album has the greatest number of tracks?
 
